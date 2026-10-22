@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CrashGuard AI · Control Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0f17; --panel: #121826; --panel2: #182033; --line: #232c40;
+    --text: #e6eaf2; --muted: #8a94a8;
+    --red: #ff4d5e; --orange: #ff9f43; --yellow: #f7c948; --green: #2ecc8f; --blue: #4d8dff;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 Inter, system-ui, sans-serif; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 24px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 1000; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; }
+  .logo { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg, var(--red), var(--orange)); display: grid; place-items: center; }
+  .live { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--green); box-shadow: 0 0 0 0 rgba(46,204,143,.6); animation: pulse 2s infinite; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 8px rgba(46,204,143,0); } 100% { box-shadow: 0 0 0 0 rgba(46,204,143,0); } }
+  .spacer { flex: 1; }
+  .clock { color: var(--muted); font-size: 13px; }
+  button { font: inherit; cursor: pointer; border: 1px solid var(--line); background: var(--panel2); color: var(--text); padding: 7px 14px; border-radius: 8px; }
+  button:hover { border-color: #3a4766; }
+  button.primary { background: var(--red); border-color: var(--red); color: #fff; font-weight: 600; }
+  button.ghost { background: transparent; }
+  main { padding: 20px 24px 40px; display: grid; gap: 16px; max-width: 1600px; margin: 0 auto; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; }
+  .kpi .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .kpi .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+  .kpi .sub { color: var(--muted); font-size: 12px; }
+  .grid2 { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+  .grid3 { display: grid; grid-template-columns: 1.4fr 1fr 1.4fr; gap: 16px; }
+  @media (max-width: 1100px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; min-width: 0; }
+  .card h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .card h3 .count { color: var(--muted); font-weight: 500; }
+  #map { height: 430px; border-radius: 8px; background: #0f1420; }
+  .feed { max-height: 430px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+  .feed-item { border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 8px; padding: 10px 12px; cursor: pointer; background: var(--panel2); }
+  .feed-item:hover { border-color: #3a4766; }
+  .feed-item.critical { border-left-color: var(--red); }
+  .feed-item.severe { border-left-color: var(--orange); }
+  .feed-item.minor { border-left-color: var(--yellow); }
+  .feed-item.fresh { animation: flash 1.2s ease 3; }
+  @keyframes flash { 50% { background: rgba(255,77,94,.25); } }
+  .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .03em; }
+  .sev-critical { background: rgba(255,77,94,.15); color: var(--red); }
+  .sev-severe { background: rgba(255,159,67,.15); color: var(--orange); }
+  .sev-minor { background: rgba(247,201,72,.15); color: var(--yellow); }
+  .st-new { background: rgba(255,77,94,.15); color: var(--red); }
+  .st-acknowledged { background: rgba(77,141,255,.15); color: var(--blue); }
+  .st-dispatched { background: rgba(255,159,67,.15); color: var(--orange); }
+  .st-resolved { background: rgba(46,204,143,.15); color: var(--green); }
+  .st-false_alarm { background: rgba(138,148,168,.15); color: var(--muted); }
+  .chart-box { position: relative; height: 220px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  input, select, textarea { font: inherit; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; }
+  input[type=search] { flex: 1; min-width: 180px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: var(--panel2); }
+  .devices { display: flex; flex-direction: column; gap: 8px; }
+  .device { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--panel2); }
+  .contacts a { color: var(--text); text-decoration: none; display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .contacts a:last-child { border: 0; }
+  .empty { color: var(--muted); text-align: center; padding: 30px 10px; }
+  /* alert banner */
+  #alert { position: fixed; top: 76px; left: 50%; transform: translate(-50%, -300px); visibility: hidden; transition: transform .35s, visibility .35s; z-index: 2000; background: var(--red); color: #fff; padding: 14px 20px; border-radius: 12px; box-shadow: 0 10px 40px rgba(255,77,94,.4); display: flex; gap: 14px; align-items: center; max-width: calc(100% - 32px); }
+  #alert.show { transform: translate(-50%, 0); visibility: visible; }
+  #alert button { background: #fff; color: var(--red); border: 0; font-weight: 600; }
+  /* modal */
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; z-index: 3000; align-items: center; justify-content: center; padding: 16px; }
+  .modal-bg.open { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; width: 760px; max-width: 100%; max-height: 90vh; overflow-y: auto; padding: 20px; }
+  .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 14px 0; }
+  .detail-grid div { background: var(--panel2); border-radius: 8px; padding: 10px; }
+  .detail-grid b { display: block; font-size: 16px; margin-top: 2px; }
+  #miniMap { height: 220px; border-radius: 8px; margin: 10px 0; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+  .notes { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .note { background: var(--panel2); border-radius: 8px; padding: 8px 10px; }
+  .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(1.25) contrast(.85) saturate(.5); }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--text); }
+  .gauge { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 6px; }
+  .gauge span { display: block; height: 100%; }
+  @media (max-width: 600px) { header, main { padding-left: 16px; padding-right: 16px; } .clock { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><div class="logo">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+  </div>CrashGuard AI <span class="muted" style="font-weight:500">Control Center</span></div>
+  <div class="live"><span class="dot" id="liveDot"></span><span id="liveText">Connecting…</span></div>
+  <div class="spacer"></div>
+  <span class="clock mono" id="clock"></span>
+  <button class="ghost" id="soundBtn" title="Toggle alert sound">🔔 Sound on</button>
+  <button class="ghost" onclick="location.href='/api/export.csv'">⬇ Export CSV</button>
+  <button class="primary" id="simBtn">⚡ Simulate crash</button>
+</header>
+
+<div id="alert"><div><b>🚨 CRASH DETECTED</b><div id="alertText" style="font-size:13px"></div></div><button id="alertView">View</button></div>
+
+<main>
+  <section class="kpis">
+    <div class="kpi"><div class="label">Total detections</div><div class="value" id="kTotal">0</div><div class="sub" id="kToday">0 today</div></div>
+    <div class="kpi"><div class="label">Active incidents</div><div class="value" style="color:var(--red)" id="kActive">0</div><div class="sub">awaiting resolution</div></div>
+    <div class="kpi"><div class="label">Critical</div><div class="value" style="color:var(--red)" id="kCritical">0</div><div class="sub" id="kSevere">0 severe · 0 minor</div></div>
+    <div class="kpi"><div class="label">Avg response</div><div class="value" id="kResp">—</div><div class="sub">time to acknowledge</div></div>
+    <div class="kpi"><div class="label">Devices online</div><div class="value" style="color:var(--green)" id="kDevices">0</div><div class="sub" id="kDevTotal">of 0 registered</div></div>
+    <div class="kpi"><div class="label">False alarms</div><div class="value" id="kFalse">0</div><div class="sub" id="kAcc">AI accuracy —</div></div>
+  </section>
+
+  <section class="grid2">
+    <div class="card"><h3>🗺️ Live incident map</h3><div id="map"></div></div>
+    <div class="card"><h3>🔴 Live alert feed <span class="count" id="feedCount"></span></h3><div class="feed" id="feed"></div></div>
+  </section>
+
+  <section class="grid3">
+    <div class="card"><h3>📈 Detections · last 7 days</h3><div class="chart-box"><canvas id="cDays"></canvas></div></div>
+    <div class="card"><h3>🎯 Severity breakdown</h3><div class="chart-box"><canvas id="cSev"></canvas></div></div>
+    <div class="card"><h3>🕐 Crashes by hour of day</h3><div class="chart-box"><canvas id="cHour"></canvas></div></div>
+  </section>
+
+  <section class="grid2">
+    <div class="card">
+      <h3>📋 All detections <span class="count" id="tableCount"></span></h3>
+      <div class="toolbar">
+        <input type="search" id="q" placeholder="Search by ID, device, direction…">
+        <select id="fSev"><option value="">All severities</option><option>critical</option><option>severe</option><option>minor</option></select>
+        <select id="fStatus"><option value="">All statuses</option><option value="new">New</option><option value="acknowledged">Acknowledged</option><option value="dispatched">Dispatched</option><option value="resolved">Resolved</option><option value="false_alarm">False alarm</option></select>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Event</th><th>Time</th><th>Device</th><th>Severity</th><th>Impact</th><th>Speed</th><th>AI conf.</th><th>Status</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+      <div class="card"><h3>📡 IoT devices <span class="count" id="devCount"></span></h3><div class="devices" id="devices"></div></div>
+      <div class="card contacts"><h3>☎️ Emergency contacts</h3><div id="contacts"></div></div>
+    </div>
+  </section>
+</main>
+
+<div class="modal-bg" id="modalBg"><div class="modal" id="modal"></div></div>
+
+<script>
+const state = { events: [], devices: [], stats: null, sound: true, markers: {} };
+const $ = (id) => document.getElementById(id);
+const sevColor = { critical: '#ff4d5e', severe: '#ff9f43', minor: '#f7c948' };
+const statusLabel = { new: 'New', acknowledged: 'Acknowledged', dispatched: 'Dispatched', resolved: 'Resolved', false_alarm: 'False alarm' };
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmtTime = (t) => new Date(t).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+function ago(t) {
+  const s = Math.floor((Date.now() - t) / 1000);
+  if (s < 60) return s + 's ago'; if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago'; return Math.floor(s / 86400) + 'd ago';
+}
+const api = (url, opts = {}) => fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts }).then((r) => r.json());
+
+// ---------- map ----------
+const map = L.map('map', { zoomControl: true }).setView([28.6, 77.2], 10);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(map);
+function markerFor(e) {
+  const c = sevColor[e.severity] || '#8a94a8';
+  const active = !['resolved', 'false_alarm'].includes(e.status);
+  return L.circleMarker([e.lat, e.lng], { radius: e.severity === 'critical' ? 11 : 8, color: c, fillColor: c, fillOpacity: active ? .75 : .25, weight: active ? 3 : 1 })
+    .bindPopup(`<b>${esc(e.id)}</b><br>${esc(e.severity.toUpperCase())} · ${e.gForce} g<br>${esc(e.deviceId)}<br>${fmtTime(e.timestamp)}<br><a href="#" onclick="openEvent('${esc(e.id)}');return false">Open details →</a>`);
+}
+function renderMap() {
+  Object.values(state.markers).forEach((m) => m.remove());
+  state.markers = {};
+  state.events.filter((e) => e.lat || e.lng).forEach((e) => { state.markers[e.id] = markerFor(e).addTo(map); });
+}
+
+// ---------- charts ----------
+Chart.defaults.color = '#8a94a8'; Chart.defaults.borderColor = '#232c40'; Chart.defaults.font.family = 'Inter';
+const dayLabels = [...Array(7)].map((_, i) => { const d = new Date(Date.now() - (6 - i) * 864e5); return d.toLocaleDateString([], { weekday: 'short' }); });
+const cDays = new Chart($('cDays'), { type: 'line', data: { labels: dayLabels, datasets: [{ data: [], borderColor: '#ff4d5e', backgroundColor: 'rgba(255,77,94,.15)', fill: true, tension: .35, pointRadius: 3 }] }, options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } } });
+const cSev = new Chart($('cSev'), { type: 'doughnut', data: { labels: ['Critical', 'Severe', 'Minor'], datasets: [{ data: [0, 0, 0], backgroundColor: ['#ff4d5e', '#ff9f43', '#f7c948'], borderWidth: 0 }] }, options: { maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'bottom' } } } });
+const cHour = new Chart($('cHour'), { type: 'bar', data: { labels: [...Array(24).keys()].map((h) => h + 'h'), datasets: [{ data: [], backgroundColor: '#4d8dff', borderRadius: 3 }] }, options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { ticks: { maxTicksLimit: 12 } } } } });
+
+// ---------- renderers ----------
+function renderStats() {
+  const s = state.stats; if (!s) return;
+  $('kTotal').textContent = s.total; $('kToday').textContent = s.today + ' today';
+  $('kActive').textContent = s.active;
+  $('kCritical').textContent = s.bySeverity.critical || 0;
+  $('kSevere').textContent = `${s.bySeverity.severe || 0} severe · ${s.bySeverity.minor || 0} minor`;
+  $('kResp').textContent = s.avgResponseSec == null ? '—' : s.avgResponseSec < 60 ? s.avgResponseSec + 's' : Math.round(s.avgResponseSec / 60) + 'm';
+  $('kDevices').textContent = s.devicesOnline; $('kDevTotal').textContent = `of ${s.devicesTotal} registered`;
+  const fa = s.byStatus.false_alarm || 0, confirmed = (s.byStatus.resolved || 0) + (s.byStatus.dispatched || 0);
+  $('kFalse').textContent = fa;
+  $('kAcc').textContent = fa + confirmed ? `AI accuracy ${Math.round((confirmed / (fa + confirmed)) * 100)}%` : 'AI accuracy —';
+  cDays.data.datasets[0].data = s.last7; cDays.update();
+  cSev.data.datasets[0].data = [s.bySeverity.critical || 0, s.bySeverity.severe || 0, s.bySeverity.minor || 0]; cSev.update();
+  cHour.data.datasets[0].data = s.byHour; cHour.update();
+}
+
+function renderFeed(freshId) {
+  const active = state.events.filter((e) => !['resolved', 'false_alarm'].includes(e.status));
+  const list = (active.length ? active : state.events).slice(0, 25);
+  $('feedCount').textContent = active.length ? `${active.length} active` : '';
+  $('feed').innerHTML = list.length ? list.map((e) => `
+    <div class="feed-item ${e.severity} ${e.id === freshId ? 'fresh' : ''}" onclick="openEvent('${e.id}')">
+      <div class="row"><b class="mono">${esc(e.id)}</b><span class="badge sev-${e.severity}">${e.severity}</span></div>
+      <div class="row" style="margin-top:4px"><span>${esc(deviceName(e.deviceId))} · <b>${e.gForce} g</b> · ${e.speed} km/h</span></div>
+      <div class="row" style="margin-top:4px"><span class="muted">${ago(e.timestamp)} · ${esc(e.impactDirection)} impact</span><span class="badge st-${e.status}">${statusLabel[e.status]}</span></div>
+    </div>`).join('') : '<div class="empty">No detections yet.<br>Waiting for IoT devices… or click <b>Simulate crash</b>.</div>';
+}
+
+function renderTable() {
+  const q = $('q').value.toLowerCase(), fs = $('fSev').value, fst = $('fStatus').value;
+  const rows = state.events.filter((e) => (!fs || e.severity === fs) && (!fst || e.status === fst) &&
+    (!q || [e.id, e.deviceId, deviceName(e.deviceId), e.impactDirection].join(' ').toLowerCase().includes(q)));
+  $('tableCount').textContent = `${rows.length} of ${state.events.length}`;
+  $('tbody').innerHTML = rows.length ? rows.slice(0, 200).map((e) => `
+    <tr onclick="openEvent('${e.id}')">
+      <td class="mono">${esc(e.id)}</td><td>${fmtTime(e.timestamp)}</td><td>${esc(deviceName(e.deviceId))}</td>
+      <td><span class="badge sev-${e.severity}">${e.severity}</span></td>
+      <td>${e.gForce} g · ${esc(e.impactDirection)}</td><td>${e.speed} km/h</td>
+      <td>${e.aiConfidence != null ? Math.round(e.aiConfidence * 100) + '%' : '—'}</td>
+      <td><span class="badge st-${e.status}">${statusLabel[e.status]}</span></td>
+    </tr>`).join('') : '<tr><td colspan="8" class="empty">No matching detections</td></tr>';
+}
+
+function deviceName(id) { const d = state.devices.find((x) => x.id === id); return d ? d.name : id; }
+
+function renderDevices() {
+  $('devCount').textContent = state.devices.length ? state.devices.length : '';
+  $('devices').innerHTML = state.devices.length ? state.devices.map((d) => {
+    const online = Date.now() - d.lastSeen < 60e3;
+    const st = d.status === 'crash' ? ['CRASH', 'st-new'] : online ? ['Online', 'st-resolved'] : ['Offline', 'st-false_alarm'];
+    const bat = d.battery != null ? Number(d.battery) : null;
+    return `<div class="device">
+      <div class="row"><b>${esc(d.name)}</b><span class="badge ${st[1]}">${st[0]}</span></div>
+      <div class="muted">${esc(d.vehicle || '')}${d.owner ? ' · ' + esc(d.owner) : ''}</div>
+      <div class="muted mono" style="margin-top:4px">${esc(d.id)} · seen ${ago(d.lastSeen)}${d.signal ? ' · ' + d.signal + ' dBm' : ''}</div>
+      ${bat != null ? `<div class="muted" style="margin-top:4px">Battery ${bat}%</div><div class="gauge"><span style="width:${bat}%;background:${bat > 30 ? 'var(--green)' : 'var(--red)'}"></span></div>` : ''}
+    </div>`;
+  }).join('') : '<div class="empty">No devices yet. Devices appear after their first heartbeat or crash report.</div>';
+}
+
+async function renderContacts() {
+  const c = await api('/api/contacts');
+  $('contacts').innerHTML = c.map((x) => `<a href="tel:${esc(x.phone)}"><span>${esc(x.name)}</span><b class="mono">${esc(x.phone)}</b></a>`).join('');
+}
+
+// ---------- detail modal ----------
+let miniMap = null;
+window.openEvent = function (id) {
+  const e = state.events.find((x) => x.id === id); if (!e) return;
+  const d = state.devices.find((x) => x.id === e.deviceId) || {};
+  $('modal').innerHTML = `
+    <div class="row"><div><h2 style="margin:0" class="mono">${esc(e.id)}</h2><div class="muted">${fmtTime(e.timestamp)} · ${ago(e.timestamp)}</div></div>
+      <div><span class="badge sev-${e.severity}">${e.severity}</span> <span class="badge st-${e.status}">${statusLabel[e.status]}</span> <button class="ghost" onclick="closeModal()">✕</button></div></div>
+    <div class="detail-grid">
+      <div><span class="muted">Impact force</span><b>${e.gForce} g</b></div>
+      <div><span class="muted">Speed at impact</span><b>${e.speed} km/h</b></div>
+      <div><span class="muted">Impact direction</span><b>${esc(e.impactDirection)}</b></div>
+      <div><span class="muted">Tilt angle</span><b>${e.tiltAngle}°</b></div>
+      <div><span class="muted">Rollover</span><b>${e.rollover ? '⚠️ Yes' : 'No'}</b></div>
+      <div><span class="muted">Airbag</span><b>${e.airbagDeployed ? 'Deployed' : 'Not deployed'}</b></div>
+      <div><span class="muted">Vibration</span><b>${e.vibration || '—'}</b></div>
+      <div><span class="muted">Temperature</span><b>${e.temperature != null ? e.temperature + ' °C' : '—'}</b></div>
+      <div><span class="muted">AI confidence</span><b>${e.aiConfidence != null ? Math.round(e.aiConfidence * 100) + '%' : '—'}</b></div>
+      <div><span class="muted">Device</span><b>${esc(d.name || e.deviceId)}</b></div>
+      <div style="grid-column:span 2"><span class="muted">Vehicle / owner</span><b>${esc(d.vehicle || '—')}${d.owner ? ' · ' + esc(d.owner) : ''}</b></div>
+    </div>
+    <div class="row"><span class="muted mono">📍 ${e.lat.toFixed(5)}, ${e.lng.toFixed(5)}</span>
+      <a style="color:var(--blue)" target="_blank" href="https://www.google.com/maps?q=${e.lat},${e.lng}">Open in Google Maps ↗</a></div>
+    <div id="miniMap"></div>
+    ${e.imageUrl ? `<img src="${esc(e.imageUrl)}" style="width:100%;border-radius:8px;margin-bottom:10px">` : ''}
+    <div class="actions">
+      <button onclick="setStatus('${e.id}','acknowledged')">✔ Acknowledge</button>
+      <button onclick="setStatus('${e.id}','dispatched')">🚑 Dispatch help</button>
+      <button onclick="setStatus('${e.id}','resolved')">✅ Resolve</button>
+      <button onclick="setStatus('${e.id}','false_alarm')">🚫 False alarm</button>
+      <button class="ghost" style="color:var(--red)" onclick="delEvent('${e.id}')">Delete</button>
+    </div>
+    <div class="row" style="gap:8px"><input id="noteIn" placeholder="Add a responder note…" style="flex:1"><button onclick="addNote('${e.id}')">Add note</button></div>
+    <div class="notes">${e.notes.map((n) => `<div class="note">${esc(n.text)}<div class="muted">${fmtTime(n.at)}</div></div>`).join('')}</div>`;
+  $('modalBg').classList.add('open');
+  if (miniMap) miniMap.remove();
+  miniMap = L.map('miniMap', { zoomControl: false, attributionControl: false }).setView([e.lat, e.lng], 15);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(miniMap);
+  L.circleMarker([e.lat, e.lng], { radius: 10, color: sevColor[e.severity], fillOpacity: .8 }).addTo(miniMap);
+  setTimeout(() => miniMap.invalidateSize(), 60);
+};
+window.closeModal = () => $('modalBg').classList.remove('open');
+$('modalBg').addEventListener('click', (ev) => { if (ev.target.id === 'modalBg') closeModal(); });
+document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeModal(); });
+window.setStatus = async (id, status) => { await api('/api/events/' + id, { method: 'PATCH', body: JSON.stringify({ status }) }); openEvent(id); };
+window.addNote = async (id) => { const v = $('noteIn').value.trim(); if (!v) return; await api('/api/events/' + id, { method: 'PATCH', body: JSON.stringify({ note: v }) }); openEvent(id); };
+window.delEvent = async (id) => { if (!confirm('Delete this detection permanently?')) return; await api('/api/events/' + id, { method: 'DELETE' }); closeModal(); };
+
+// ---------- alerts ----------
+let audioCtx;
+function beep() {
+  if (!state.sound) return;
+  try {
+    audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
+    [0, .3, .6].forEach((t) => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = 'square'; o.frequency.value = 880; g.gain.value = .08;
+      o.connect(g).connect(audioCtx.destination);
+      o.start(audioCtx.currentTime + t); o.stop(audioCtx.currentTime + t + .18);
+    });
+  } catch {}
+}
+let alertTimer;
+function showAlert(e) {
+  $('alertText').textContent = `${e.severity.toUpperCase()} · ${deviceName(e.deviceId)} · ${e.gForce} g at ${e.speed} km/h`;
+  $('alertView').onclick = () => { $('alert').classList.remove('show'); openEvent(e.id); };
+  $('alert').classList.add('show');
+  clearTimeout(alertTimer); alertTimer = setTimeout(() => $('alert').classList.remove('show'), 8000);
+  beep();
+  if (Notification?.permission === 'granted') new Notification('🚨 Crash detected', { body: $('alertText').textContent });
+  document.title = '🚨 CRASH · CrashGuard AI'; setTimeout(() => (document.title = 'CrashGuard AI · Control Center'), 10000);
+}
+
+// ---------- data loading + live stream ----------
+async function refreshStatsAndDevices() {
+  [state.stats, state.devices] = await Promise.all([api('/api/stats'), api('/api/devices')]);
+  renderStats(); renderDevices();
+}
+function renderAll(freshId) { renderFeed(freshId); renderTable(); renderMap(); }
+
+async function init() {
+  [state.events, state.devices, state.stats] = await Promise.all([api('/api/events'), api('/api/devices'), api('/api/stats')]);
+  renderStats(); renderDevices(); renderAll(); renderContacts();
+  const pts = state.events.filter((e) => e.lat || e.lng).map((e) => [e.lat, e.lng]);
+  if (pts.length) map.fitBounds(pts, { padding: [30, 30], maxZoom: 13 });
+
+  const es = new EventSource('/api/stream');
+  es.onopen = () => { $('liveDot').classList.add('on'); $('liveText').textContent = 'Live'; };
+  es.onerror = () => { $('liveDot').classList.remove('on'); $('liveText').textContent = 'Reconnecting…'; };
+  es.addEventListener('crash', async (m) => {
+    const e = JSON.parse(m.data);
+    state.events.unshift(e);
+    await refreshStatsAndDevices();
+    renderAll(e.id); showAlert(e);
+    map.flyTo([e.lat, e.lng], 13, { duration: 1.2 });
+  });
+  es.addEventListener('update', (m) => {
+    const e = JSON.parse(m.data);
+    const i = state.events.findIndex((x) => x.id === e.id); if (i >= 0) state.events[i] = e;
+    renderAll(); refreshStatsAndDevices();
+  });
+  es.addEventListener('delete', (m) => {
+    const { id } = JSON.parse(m.data);
+    state.events = state.events.filter((x) => x.id !== id);
+    renderAll(); refreshStatsAndDevices();
+  });
+  es.addEventListener('device', (m) => {
+    const d = JSON.parse(m.data);
+    const i = state.devices.findIndex((x) => x.id === d.id); if (i >= 0) state.devices[i] = d; else state.devices.push(d);
+    renderDevices();
+  });
+}
+
+$('simBtn').onclick = async () => { $('simBtn').disabled = true; await api('/api/simulate', { method: 'POST' }); $('simBtn').disabled = false; };
+$('soundBtn').onclick = () => { state.sound = !state.sound; $('soundBtn').textContent = state.sound ? '🔔 Sound on' : '🔕 Sound off'; if (state.sound) beep(); };
+['q', 'fSev', 'fStatus'].forEach((id) => $(id).addEventListener('input', renderTable));
+setInterval(() => { $('clock').textContent = new Date().toLocaleString(); }, 1000);
+setInterval(() => { renderFeed(); refreshStatsAndDevices(); }, 30000); // refresh "x ago" labels + online status
+if ('Notification' in window && Notification.permission === 'default') document.addEventListener('click', () => Notification.requestPermission(), { once: true });
+init();
+</script>
+</body>
+</html>
